@@ -5,7 +5,6 @@ from commands.player.commands import PlayerCommands
 
 logger = setup_logging()
 
-
 class CocTrackerBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -16,6 +15,11 @@ class CocTrackerBot(commands.Bot):
         )
 
     async def setup_hook(self):
+        # Clear all existing commands first
+        self.tree.clear_commands(guild=None)
+        await self.tree.sync()
+        logger.info("Cleared existing commands")
+
         # Initialize COC client
         try:
             self.coc_client = await setup_coc_client()
@@ -26,21 +30,28 @@ class CocTrackerBot(commands.Bot):
             return
 
         # Add cogs
-        await self.add_cog(PlayerCommands(self, self.coc_client))
-        logger.info("Cogs loaded successfully")
+        try:
+            await self.add_cog(PlayerCommands(self, self.coc_client))
+            logger.info("PlayerCommands cog loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load PlayerCommands cog: {e}")
+            return
 
         # Sync commands
-        await self.tree.sync()
-        logger.info("Command tree synced")
+        try:
+            logger.info("Starting command sync...")
+            synced = await self.tree.sync()
+            logger.info(f"Successfully synced {len(synced)} command(s)")
+            for cmd in synced:
+                logger.info(f"Synced command: {cmd.name}")
+        except Exception as e:
+            logger.error(f"Failed to sync commands: {e}")
 
     async def on_ready(self):
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
-
-    async def close(self):
-        if hasattr(self, 'coc_client'):
-            await self.coc_client.close()
-        await super().close()
-
+        logger.info("Registered commands:")
+        for cmd in self.tree.get_commands():
+            logger.info(f"- {cmd.name}")
 
 def main():
     bot = CocTrackerBot()
@@ -49,7 +60,6 @@ def main():
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
         raise
-
 
 if __name__ == "__main__":
     main()
