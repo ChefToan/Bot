@@ -241,11 +241,9 @@ class PlayerCommands(commands.Cog):
 
         last_trophies = None
         player = None
-        status_message = None
-        retries = 3  # Number of retries for API calls
 
         # Get initial trophy count with retries
-        for attempt in range(retries):
+        for attempt in range(3):
             try:
                 player = await get_player_info(tag)
                 if player and player.league:
@@ -258,24 +256,25 @@ class PlayerCommands(commands.Cog):
                     print(f"Starting Legend League trophy tracking for {player.name} at {last_trophies} trophies")
                     await channel.send(
                         f"🏆 Starting Legend League trophy tracking for {player.name} at {last_trophies} trophies")
-                    status_message = await channel.send(f"Monitoring {player.name}'s trophy count...")
                     break
             except Exception as e:
-                print(f"Error on attempt {attempt + 1}/{retries} getting initial trophy count: {e}")
-                if attempt == retries - 1:  # Last attempt failed
-                    print(f"Failed to initialize tracking for {tag} after {retries} attempts")
-                    await channel.send(
-                        f"❌ Failed to initialize tracking after {retries} attempts. Please try again later.")
-                    return
-                await asyncio.sleep(2)  # Wait before retry
+                print(f"Error on attempt {attempt + 1}/3 getting initial trophy count for {tag}: {e}")
+                await asyncio.sleep(2)
+
+        if last_trophies is None:
+            await channel.send(f"❌ Failed to initialize tracking. Please try again later.")
+            return
+
+        check_interval = 30  # Check every 30 seconds for better response time
 
         while True:
             try:
-                await asyncio.sleep(60)  # Wait for 1 minute before checking again
+                await asyncio.sleep(check_interval)
 
+                # Get latest player info
                 player = await get_player_info(tag)
                 if not player or not player.league:
-                    print(f"Error: Could not get player info for {tag}")
+                    print(f"Warning: Could not get player info for {tag}")
                     continue
 
                 # Check if player is still in Legend League
@@ -287,46 +286,36 @@ class PlayerCommands(commands.Cog):
 
                 # If trophy count changed, send a message
                 if current_trophies != last_trophies:
-                    # Clear status message on trophy change
-                    if status_message:
-                        await status_message.delete()
-
                     trophy_change = current_trophies - last_trophies
+                    print(f"Trophy change detected for {player.name}: {trophy_change}")
+
                     message = self.format_legend_league_change(player.name, trophy_change)
-
-                    # Only send message if it's not None (skip 3-star defenses)
-                    if message:
-                        print(f"Trophy change detected for {player.name}: {trophy_change}")
-                        await channel.send(message)
-
+                    await channel.send(message)
                     last_trophies = current_trophies
-                    # Create new status message
-                    status_message = await channel.send(f"Monitoring {player.name}'s trophy count...")
 
             except asyncio.CancelledError:
                 print(f"Stopping trophy tracking for {player.name if player else tag} - Bot shutdown")
-                if status_message:
-                    await status_message.delete()
-                await channel.send(f"🛑 Trophy tracking stopped - Bot shutdown")
+                await channel.send(f"🛑 Trophy tracking stopped for {player.name if player else tag} - Bot shutdown")
                 return
 
             except Exception as e:
                 print(f"Error in trophy tracking loop for {tag}: {e}")
                 await asyncio.sleep(5)  # Wait a bit longer on error
+                continue  # Continue the loop instead of breaking
 
     def format_legend_league_change(self, player_name: str, trophy_change: int) -> str:
         """Format trophy change message specifically for Legend League"""
         if trophy_change > 0:
             if trophy_change == 40:  # Exactly 40 for 3-star
-                return (f" **ATTACK WON!** \n"
+                return (f"⚔️ **ATTACK WON!** \n"
                         f"{player_name} got a 3-star attack!\n"
                         f"Trophy change: +{trophy_change} 🏆")
             elif 16 <= trophy_change <= 32:  # Range 16-32 for 2-star
-                return (f" **ATTACK WON!** \n"
+                return (f"⚔️ **ATTACK WON!** \n"
                         f"{player_name} got a 2-star attack!\n"
                         f"Trophy change: +{trophy_change} 🏆")
             elif 1 <= trophy_change <= 15:  # Range 1-15 for 1-star
-                return (f" **ATTACK WON!** \n"
+                return (f"⚔️ **ATTACK WON!** \n"
                         f"{player_name} got a 1-star attack!\n"
                         f"Trophy change: +{trophy_change} 🏆")
             else:
@@ -337,17 +326,19 @@ class PlayerCommands(commands.Cog):
             trophy_change = abs(trophy_change)
             # Skip notification for 3-star defenses (40 trophy loss)
             if trophy_change == 40:
-                return None  # Return None to indicate no message should be sent
+                return (f"🛡️ **DEFENSE LOST!** \n"
+                        f"{player_name}'s base was 3-starred\n"
+                        f"Trophy change: -{trophy_change} 🏆")
             elif 16 <= trophy_change <= 32:  # Range 16-32 for 2-star defense
-                return (f" **DEFENSE LOST!** \n"
+                return (f"🛡️ **DEFENSE LOST!** \n"
                         f"{player_name}'s base was 2-starred\n"
                         f"Trophy change: -{trophy_change} 🏆")
             elif 1 <= trophy_change <= 15:  # Range 1-15 for 1-star defense
-                return (f" **DEFENSE LOST!** \n"
+                return (f"🛡️ **DEFENSE LOST!** \n"
                         f"{player_name}'s base was 1-starred\n"
                         f"Trophy change: -{trophy_change} 🏆")
             else:
-                return (f"🛡️ **LEGEND LEAGUE DEFENSE!** 🛡️\n"
+                return (f"🛡️ **DEFENSE RESULT** 🛡️\n"
                         f"{player_name} lost some trophies\n"
                         f"Trophy change: -{trophy_change} 🏆")
 
@@ -473,16 +464,6 @@ class PlayerCommands(commands.Cog):
                         value=f"{player.clan.name}",
                         inline=True
                     )
-
-                # Add rankings
-                global_rank = f"🌐 {player.global_rank:,} (Top {player.global_rank_percentage:.2f}%)" if player.global_rank else "🌐 Unranked"
-                local_rank = f"🏳️ {player.local_rank} ({player.country_name})" if player.local_rank else f"🏳️ Unranked ({player.country_name})"
-
-                embed.add_field(
-                    name="Rankings",
-                    value=f"{global_rank}\n{local_rank}",
-                    inline=False
-                )
 
                 # Set thumbnail if league icon is available
                 if player.league and player.league.icon:
