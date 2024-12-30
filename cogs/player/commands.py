@@ -259,7 +259,7 @@ class PlayerCommands(commands.Cog):
                     last_trophies = player.trophies
 
                     # Check if it's past 9 PM GMT-7 and we need to set initial trophies
-                    if current_time.hour >= 21:  # 9 PM or later
+                    if current_time.hour >= 22:  # 9 PM or later
                         await update_trophy_count(tag, last_trophies, is_daily=True)
                         print(f"Setting initial trophy count for {player.name} at {last_trophies} (9 PM GMT-7)")
                     else:
@@ -393,11 +393,11 @@ class PlayerCommands(commands.Cog):
             now = datetime.now(tz)
 
             # Calculate time until next 9 PM
-            if now.hour >= 21:  # If it's past 9 PM
+            if now.hour >= 22:  # If it's past 9 PM
                 next_summary = now + timedelta(days=1)  # Schedule for tomorrow
             else:
                 next_summary = now
-            next_summary = next_summary.replace(hour=21, minute=0, second=0, microsecond=0)
+            next_summary = next_summary.replace(hour=22, minute=0, second=0, microsecond=0)
 
             # Sleep until next summary time
             await asyncio.sleep((next_summary - now).total_seconds())
