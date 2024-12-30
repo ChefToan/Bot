@@ -297,7 +297,7 @@ class PlayerCommands(commands.Cog):
                     continue
 
                 # Check if it's 9 PM GMT-7 and we need to record daily start trophies
-                if current_time.hour == 21 and current_time.minute == 0:
+                if current_time.hour == 22 and current_time.minute == 0:
                     await update_trophy_count(tag, player.trophies, is_daily=True)
                     print(f"Updated daily start trophies for {player.name} to {player.trophies}")
 
