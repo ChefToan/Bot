@@ -28,16 +28,6 @@ class ClashBot(commands.Bot):
         print(f'Logged in as {self.user} (ID: {self.user.id})')
         print('------')
 
-    # async def close(self):
-    #     print("\nShutting down bot...")
-    #     # player_cog = self.get_cog('PlayerCommands')
-    #     # if player_cog:
-    #     #     # Cancel all tracking tasks
-    #     #     for task in player_cog.tracking_tasks.values():
-    #     #         task.cancel()
-    #     await close_database()
-    #     await super().close()
-
     async def close(self):
         """Cleanup when bot shuts down"""
         print("Bot is shutting down...")
@@ -71,18 +61,6 @@ async def main():
 
     bot = ClashBot()
 
-    # # Load cogs
-    # bot.load_extension("cogs.player.commands")
-    #
-    # try:
-    #     bot.run(DISCORD_TOKEN)
-    # except KeyboardInterrupt:
-    #     print("\nBot shutdown complete.")
-    # finally:
-    #     # Ensure we clean up even if there's an error
-    #     if not bot.is_closed():
-    #         bot.close()
-
     try:
         # Load cogs
         bot.load_extension("cogs.player.commands")
@@ -93,9 +71,6 @@ async def main():
         await bot.close()
     finally:
         await bot.close()
-
-# if __name__ == "__main__":
-#     main()
 
 if __name__ == "__main__":
     asyncio.run(main())

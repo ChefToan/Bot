@@ -1,4 +1,7 @@
 from datetime import datetime
+
+import pytz
+
 from database.mongo_utils import get_database
 from typing import List, Optional, Dict, Any
 import pymongo
@@ -43,6 +46,12 @@ async def save_tracking_channel(discord_id: int, player_tag: str, channel_id: in
         # Create index for player_tag if it doesn't exist
         await db.tracking_channels.create_index("player_tag", unique=True)
 
+        # Get current time in GMT-7
+        tz = pytz.timezone('America/Los_Angeles')
+        current_time = datetime.now(tz)
+
+        # Initialize daily_start_trophy as None
+        # It will be set properly at 9 PM GMT-7
         await db.tracking_channels.insert_one({
             "discord_id": discord_id,
             "player_tag": player_tag,
@@ -50,7 +59,8 @@ async def save_tracking_channel(discord_id: int, player_tag: str, channel_id: in
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
             "last_trophy_count": None,
-            "daily_start_trophy": None
+            "daily_start_trophy": None,
+            "last_daily_reset": None  # Add this field to track last reset
         })
     except pymongo.errors.DuplicateKeyError:
         # Update existing channel if player already being tracked
@@ -83,12 +93,20 @@ async def update_trophy_count(player_tag: str, trophy_count: int, is_daily: bool
     """Update trophy count for player"""
     db = await get_database()
     try:
+        # Get current time in GMT-7
+        tz = pytz.timezone('America/Los_Angeles')
+        current_time = datetime.now(tz)
+
         update = {
             "updated_at": datetime.utcnow(),
             "last_trophy_count": trophy_count
         }
+
         if is_daily:
-            update["daily_start_trophy"] = trophy_count
+            update.update({
+                "daily_start_trophy": trophy_count,
+                "last_daily_reset": current_time
+            })
 
         await db.tracking_channels.update_one(
             {"player_tag": player_tag},
