@@ -93,8 +93,8 @@ async def update_trophy_count(player_tag: str, trophy_count: int, is_daily: bool
     """Update trophy count for player"""
     db = await get_database()
     try:
-        # Get current time in GMT-7
-        tz = pytz.timezone('America/Los_Angeles')
+        # Get current time in Phoenix timezone
+        tz = pytz.timezone('America/Phoenix')
         current_time = datetime.now(tz)
 
         update = {
@@ -102,7 +102,8 @@ async def update_trophy_count(player_tag: str, trophy_count: int, is_daily: bool
             "last_trophy_count": trophy_count
         }
 
-        if is_daily:
+        # Only update daily_start_trophy if it's exactly 10 PM and is_daily is True
+        if is_daily and current_time.hour == 22 and current_time.minute == 0:
             update.update({
                 "daily_start_trophy": trophy_count,
                 "last_daily_reset": current_time
