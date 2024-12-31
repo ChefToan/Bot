@@ -12,16 +12,13 @@ class PlayerCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.tracking_tasks = {}
+        self.timezone = pytz.timezone('America/Phoenix')
         self.bot.loop.create_task(self.schedule_daily_summary())
-        # We'll set up tracking in on_ready instead of here
 
     async def setup_tracking_for_all_players(self):
         """Resume tracking for all players when bot starts"""
         try:
-            # Wait until bot is fully ready
             await self.bot.wait_until_ready()
-
-            # Get all tracking channels from database
             tracked_channels = await get_tracking_channels()
             print(f"Found {len(tracked_channels)} tracked players to resume")
 
@@ -30,11 +27,9 @@ class PlayerCommands(commands.Cog):
                     tag = channel_info["player_tag"]
                     channel_id = channel_info["channel_id"]
 
-                    # Verify channel exists
                     channel = self.bot.get_channel(channel_id)
                     if not channel:
                         print(f"Warning: Cannot find channel {channel_id} for player {tag}")
-                        # Try to fetch the channel directly
                         try:
                             channel = await self.bot.fetch_channel(channel_id)
                             if channel:
@@ -44,7 +39,6 @@ class PlayerCommands(commands.Cog):
                             continue
 
                     if channel:
-                        # Start tracking task for each player
                         if tag not in self.tracking_tasks:
                             self.tracking_tasks[tag] = self.bot.loop.create_task(
                                 self.track_trophies(tag, channel_id)
@@ -57,15 +51,18 @@ class PlayerCommands(commands.Cog):
         except Exception as e:
             print(f"Error setting up tracking for all players: {e}")
 
+
     @commands.Cog.listener()
     async def on_ready(self):
         """Called when the bot is ready. Set up tracking here."""
         print("Bot is ready, setting up tracking...")
         await self.setup_tracking_for_all_players()
 
+
     @commands.slash_command()
     async def player(self, inter: disnake.ApplicationCommandInteraction):
         pass
+
 
     @player.sub_command()
     async def link(self, inter: disnake.ApplicationCommandInteraction, tag: str):
@@ -93,37 +90,33 @@ class PlayerCommands(commands.Cog):
         except Exception as e:
             await inter.edit_original_message(content=f"Error linking account: {str(e)}")
 
-        # Add stop tracking command
-        @player.sub_command()
-        async def stop_tracking(self, inter: disnake.ApplicationCommandInteraction):
-            """Stop tracking player"""
-            await inter.response.defer()
 
-            try:
-                # Get player tag from database
-                tag = await get_player_by_discord_id(inter.author.id)
-                if not tag:
-                    await inter.edit_original_message(content="You haven't linked any account!")
-                    return
+    @player.sub_command()
+    async def stop_tracking(self, inter: disnake.ApplicationCommandInteraction):
+        """Stop tracking player"""
+        await inter.response.defer()
 
-                # Cancel tracking task if exists
-                if tag in self.tracking_tasks:
-                    self.tracking_tasks[tag].cancel()
-                    del self.tracking_tasks[tag]
+        try:
+            tag = await get_player_by_discord_id(inter.author.id)
+            if not tag:
+                await inter.edit_original_message(content="You haven't linked any account!")
+                return
 
-                # Delete channel
-                channel_info = await get_tracking_channel(tag)
-                if channel_info:
-                    channel = self.bot.get_channel(channel_info["channel_id"])
-                    if channel:
-                        await channel.delete()
+            if tag in self.tracking_tasks:
+                self.tracking_tasks[tag].cancel()
+                del self.tracking_tasks[tag]
 
-                # Remove from database
-                await remove_tracking_channel(tag)
+            channel_info = await get_tracking_channel(tag)
+            if channel_info:
+                channel = self.bot.get_channel(channel_info["channel_id"])
+                if channel:
+                    await channel.delete()
 
-                await inter.edit_original_message(content="✅ Stopped tracking player!")
-            except Exception as e:
-                await inter.edit_original_message(content=f"Error stopping tracker: {str(e)}")
+            await remove_tracking_channel(tag)
+            await inter.edit_original_message(content="✅ Stopped tracking player!")
+        except Exception as e:
+            await inter.edit_original_message(content=f"Error stopping tracker: {str(e)}")
+
 
     @player.sub_command()
     async def check(self, inter: disnake.ApplicationCommandInteraction, tag: str = None):
@@ -172,6 +165,7 @@ class PlayerCommands(commands.Cog):
             await inter.edit_original_message(embed=embed)
         except Exception as e:
             await inter.edit_original_message(content=f"Error checking player: {str(e)}")
+
 
     @player.sub_command()
     async def track(self, inter: disnake.ApplicationCommandInteraction, tag: str = None):
@@ -241,33 +235,36 @@ class PlayerCommands(commands.Cog):
 
         last_trophies = None
         player = None
+        last_update_time = None
 
-        # Get current time in Phoenix timezone
-        tz = pytz.timezone('America/Phoenix')
-        current_time = datetime.now(tz)
-
-        # Get initial trophy count with retries
+        # Initialize tracking with retries
         for attempt in range(3):
             try:
                 player = await get_player_info(tag)
                 if player and player.league:
-                    # Check if player is still in Legend League
                     if player.league.id != 29000022:
                         await channel.send(f"❌ Stopping tracker - {player.name} is no longer in Legend League!")
                         return
 
                     last_trophies = player.trophies
-
-                    # Initialize tracking data
                     channel_info = await get_tracking_channel(tag)
+
+                    # Set initial trophy count to 0 if no daily_start_trophy is set
                     if channel_info and channel_info.get("daily_start_trophy") is None:
-                        # If no daily start trophy is set, set it to 0
                         await update_trophy_count(tag, 0, is_daily=True)
                         print(f"Setting initial trophy count for {player.name} to 0 until next 10 PM reset")
 
-                    print(f"Starting Legend League trophy tracking for {player.name} at {last_trophies} trophies")
                     await channel.send(
                         f"🏆 Starting Legend League trophy tracking for {player.name} at {last_trophies} trophies")
+
+                    # # Add note about waiting for next reset
+                    # current_time = datetime.now(self.timezone)
+                    # if current_time.hour >= 22:
+                    #     await channel.send("Note: Trophy tracking will begin with tomorrow's 10 PM reset")
+                    # else:
+                    #     await channel.send("Note: Trophy tracking will begin with today's 10 PM reset")
+
+
                     break
             except Exception as e:
                 print(f"Error on attempt {attempt + 1}/3 getting initial trophy count for {tag}: {e}")
@@ -277,32 +274,42 @@ class PlayerCommands(commands.Cog):
             await channel.send(f"❌ Failed to initialize tracking. Please try again later.")
             return
 
-        check_interval = 30  # Check every 30 seconds
-
         while True:
             try:
-                await asyncio.sleep(check_interval)
+                await asyncio.sleep(30)
+                current_time = datetime.now(self.timezone)
 
-                # Get current time in Phoenix timezone
-                current_time = datetime.now(tz)
-
-                # Get latest player info
                 player = await get_player_info(tag)
                 if not player or not player.league:
-                    print(f"Warning: Could not get player info for {tag}")
                     continue
 
-                # Check if player is still in Legend League
                 if player.league.id != 29000022:
                     await channel.send(f"❌ Stopping tracker - {player.name} is no longer in Legend League!")
                     return
 
-                # Check if it's exactly 10 PM to record daily start trophies
+                # Check for 10 PM update only once
                 if current_time.hour == 22 and current_time.minute == 0:
-                    await update_trophy_count(tag, player.trophies, is_daily=True)
-                    print(f"Updated daily start trophies for {player.name} to {player.trophies} at 10 PM Phoenix time")
+                    if last_update_time is None or (
+                            current_time.date() > last_update_time.date() or
+                            (current_time.date() == last_update_time.date() and
+                             current_time.hour > last_update_time.hour)
+                    ):
+                        await update_trophy_count(tag, player.trophies, is_daily=True)
+                        print(
+                            f"Updated daily start trophies for {player.name} to {player.trophies} at 10 PM Phoenix time")
+                        last_update_time = current_time
+                # if current_time.hour == 17 and current_time.minute == 50:
+                #     if last_update_time is None or (
+                #             current_time.date() > last_update_time.date() or
+                #             (current_time.date() == last_update_time.date() and
+                #              current_time.hour > last_update_time.hour)
+                #     ):
+                #         await update_trophy_count(tag, player.trophies, is_daily=True)
+                #         print(
+                #             f"Updated daily start trophies for {player.name} to {player.trophies} at 5:30 PM Phoenix time")
+                #         last_update_time = current_time
 
-                # Update current trophy count and check for changes
+                # Trophy change tracking
                 current_trophies = player.trophies
                 if current_trophies != last_trophies:
                     trophy_change = current_trophies - last_trophies
@@ -313,13 +320,12 @@ class PlayerCommands(commands.Cog):
 
             except asyncio.CancelledError:
                 print(f"Stopping trophy tracking for {player.name if player else tag}")
-                await channel.send(f"🛡️ Trophy tracking stopped for {player.name if player else tag}")
+                await channel.send(f"🔴 Trophy tracking stopped for {player.name if player else tag}")
                 return
-
             except Exception as e:
                 print(f"Error in trophy tracking loop for {tag}: {e}")
                 await asyncio.sleep(5)
-                continue
+
 
     def format_legend_league_change(self, player_name: str, trophy_change: int) -> str:
         """Format trophy change message specifically for Legend League"""
@@ -342,8 +348,7 @@ class PlayerCommands(commands.Cog):
                         f"Trophy change: +{trophy_change} 🏆")
         else:
             trophy_change = abs(trophy_change)
-            # Skip notification for 3-star defenses (40 trophy loss)
-            if trophy_change == 40:
+            if trophy_change == 40:  # Exactly 40 for 3-star defense
                 return (f"🛡️ **DEFENSE LOST!** \n"
                         f"{player_name}'s base was 3-starred\n"
                         f"Trophy change: -{trophy_change} 🏆")
@@ -359,6 +364,7 @@ class PlayerCommands(commands.Cog):
                 return (f"🛡️ **DEFENSE RESULT** 🛡️\n"
                         f"{player_name} lost some trophies\n"
                         f"Trophy change: -{trophy_change} 🏆")
+
 
     def format_trophy_change(self, player_name: str, trophy_change: int) -> str:
         """Format trophy change message"""
@@ -390,27 +396,40 @@ class PlayerCommands(commands.Cog):
                         f"{player_name}'s base was 1-starred\n"
                         f"Trophy change: -{trophy_change} 🏆")
 
+
     async def schedule_daily_summary(self):
         """Schedule daily trophy summary at 10 PM Phoenix time"""
         await self.bot.wait_until_ready()
+        last_summary_date = None
 
         while not self.bot.is_closed():
-            # Get current time in Phoenix timezone
-            tz = pytz.timezone('America/Phoenix')
-            now = datetime.now(tz)
+            try:
+                now = datetime.now(self.timezone)
 
-            # Calculate time until next 10 PM
-            if now.hour >= 22:  # If it's past 10 PM
-                next_summary = now + timedelta(days=1)  # Schedule for tomorrow
-            else:
-                next_summary = now
-            next_summary = next_summary.replace(hour=22, minute=0, second=0, microsecond=0)
+                if now.hour >= 22:
+                    next_summary = now + timedelta(days=1)
+                else:
+                    next_summary = now
+                next_summary = next_summary.replace(hour=22, minute=0, second=0, microsecond=0)
+                # if now.hour >= 17 and now.minute >= 50:
+                #     next_summary = now + timedelta(days=1)
+                # else:
+                #     next_summary = now
+                # next_summary = next_summary.replace(hour=17, minute=50, second=0, microsecond=0)
 
-            # Sleep until next summary time
-            await asyncio.sleep((next_summary - now).total_seconds())
+                sleep_seconds = (next_summary - now).total_seconds()
+                await asyncio.sleep(sleep_seconds)
 
-            # Run summary for all tracked players
-            await self.run_daily_summary()
+                current_date = datetime.now(self.timezone).date()
+                if last_summary_date != current_date:
+                    await self.run_daily_summary()
+                    last_summary_date = current_date
+                    print(f"Daily summary completed at {datetime.now(self.timezone)}")
+
+            except Exception as e:
+                print(f"Error in schedule_daily_summary: {e}")
+                await asyncio.sleep(60)
+
 
     @player.sub_command()
     async def force_summary(self, inter: disnake.ApplicationCommandInteraction):
@@ -425,10 +444,10 @@ class PlayerCommands(commands.Cog):
 
     async def run_daily_summary(self):
         """Run daily trophy summary for all tracked players"""
-        # Get all tracking channels from database
         tracked_channels = await get_tracking_channels()
-        tz = pytz.timezone('America/Phoenix')
-        current_time = datetime.now(tz)
+        current_time = datetime.now(self.timezone)
+
+        print(f"Sending daily summary to {len(tracked_channels)} players")
 
         for channel_info in tracked_channels:
             try:
@@ -440,28 +459,31 @@ class PlayerCommands(commands.Cog):
                 tag = channel_info["player_tag"]
                 player = await get_player_info(tag)
 
-                # Check if player is still in Legend League
                 if not player.league or player.league.id != 29000022:
                     await channel.send(f"❌ Daily Summary: {player.name} is no longer in Legend League!")
                     continue
 
-                # Get the starting trophy count
+                # Handle case where daily_start_trophy is None
                 start_trophies = channel_info.get("daily_start_trophy")
-
-                # If start_trophies is None, set it to 0 and update the database
                 if start_trophies is None:
                     start_trophies = 0
-                    await update_trophy_count(tag, 0, is_daily=True)
+                    print(f"No start trophies found for {player.name}, using 0 until next reset")
 
-                # Calculate trophy change
                 trophy_change = player.trophies - start_trophies
 
-                # Create summary embed
                 embed = disnake.Embed(
                     title="📊 Daily Trophy Summary",
                     description=f"Summary for {player.name}",
                     color=disnake.Color.blue()
                 )
+
+                # Add note if this was the first summary
+                if channel_info.get("daily_start_trophy") is None:
+                    embed.add_field(
+                        name="Note",
+                        value="⚠️ This is the first summary for this player. Full trophy tracking will begin at next 10 PM reset.",
+                        inline=False
+                    )
 
                 embed.add_field(
                     name="Trophy Change",
@@ -469,45 +491,38 @@ class PlayerCommands(commands.Cog):
                     inline=False
                 )
 
-                embed.add_field(
-                    name="Starting Trophies",
-                    value=f"🏆 {start_trophies}",
-                    inline=True
-                )
-
-                embed.add_field(
-                    name="Current Trophies",
-                    value=f"🏆 {player.trophies}",
-                    inline=True
-                )
+                embed.add_field(name="Starting Trophies", value=f"🏆 {start_trophies}", inline=True)
+                embed.add_field(name="Current Trophies", value=f"🏆 {player.trophies}", inline=True)
 
                 if player.clan:
-                    embed.add_field(
-                        name="Clan",
-                        value=f"{player.clan.name}",
-                        inline=True
-                    )
+                    embed.add_field(name="Clan", value=f"{player.clan.name}", inline=True)
 
-                # Set thumbnail if league icon is available
                 if player.league and player.league.icon:
                     embed.set_thumbnail(url=player.league.icon.url)
 
-                # Add timestamp
                 embed.timestamp = current_time
 
                 await channel.send(embed=embed)
+                print(f"Sent daily summary for {player.name}")
 
-                # If it's exactly 10 PM, update the daily start trophy count
+                # Update daily start trophies only at exactly 10 PM
                 if current_time.hour == 22 and current_time.minute == 0:
                     await update_trophy_count(tag, player.trophies, is_daily=True)
                 else:
-                    # If forcing summary and there's no existing start trophy data, set it to 0
-                    if start_trophies == 0 or start_trophies is None:
-                        await update_trophy_count(tag, 0, is_daily=True)
-                    # Otherwise, keep the existing start trophy value
+                    await update_trophy_count(tag, 0, is_daily=True)
+                # if current_time.hour == 17 and current_time.minute == 50:
+                #     await update_trophy_count(tag, player.trophies, is_daily=True)
+                # else:
+                #     await update_trophy_count(tag, 0, is_daily=True)
 
             except Exception as e:
                 print(f"Error generating summary for channel {channel_info['channel_id']}: {e}")
+                # Add more detailed error logging
+                print(f"Channel info: {channel_info}")
+                print(f"Current time: {current_time}")
+                if 'player' in locals():
+                    print(f"Player info: {player.__dict__}")
+
 
 def setup(bot):
     bot.add_cog(PlayerCommands(bot))
