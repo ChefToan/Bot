@@ -130,3 +130,36 @@ async def remove_tracking_channel(player_tag: str):
     except Exception as e:
         print(f"Error removing tracking channel: {e}")
         raise
+
+async def get_player_by_tag(tag: str) -> Optional[Dict[str, Any]]:
+    """Get player info by tag"""
+    db = await get_database()
+    try:
+        result = await db.player_links.find_one({"player_tag": tag})
+        return result
+    except Exception as e:
+        print(f"Error getting player by tag: {e}")
+        return None
+
+
+async def get_tracked_player_count(discord_id: int) -> int:
+    """Get the number of players being tracked by a Discord user"""
+    db = await get_database()
+    try:
+        cursor = db.tracking_channels.find({"discord_id": discord_id})
+        tracked_players = await cursor.to_list(length=None)
+        return len(tracked_players)
+    except Exception as e:
+        print(f"Error getting tracked player count: {e}")
+        return 0
+
+
+async def get_tracked_players_by_discord_id(discord_id: int) -> List[Dict[str, Any]]:
+    """Get all tracked players for a Discord user"""
+    db = await get_database()
+    try:
+        cursor = db.tracking_channels.find({"discord_id": discord_id})
+        return await cursor.to_list(length=None)
+    except Exception as e:
+        print(f"Error getting tracked players: {e}")
+        return []

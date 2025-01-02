@@ -15,7 +15,7 @@ async def get_coc_client():
     async with _lock:
         if _coc_client is None:
             try:
-                _coc_client = coc.Client(key_names="Discord Bot", key_count=1)
+                _coc_client = coc.Client(key_names="Trophy Tracker Bot", key_count=1)
                 await _coc_client.login(
                     email=COC_EMAIL,
                     password=COC_PASSWORD

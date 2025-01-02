@@ -3,8 +3,11 @@ from disnake.ext import commands
 from datetime import datetime, timedelta
 import asyncio
 import pytz
-from database.operations import save_player_link, get_player_by_discord_id, save_tracking_channel, update_trophy_count, \
-    get_tracking_channels, get_tracking_channel, remove_tracking_channel
+from database.operations import (
+    save_player_link, get_player_by_discord_id, save_tracking_channel,
+    update_trophy_count, get_tracking_channels, get_tracking_channel,
+    remove_tracking_channel, get_player_by_tag, get_tracked_player_count, get_tracked_players_by_discord_id
+)
 from services.coc_api import get_player_info
 
 
@@ -13,6 +16,7 @@ class PlayerCommands(commands.Cog):
         self.bot = bot
         self.tracking_tasks = {}
         self.timezone = pytz.timezone('America/Phoenix')
+        self.MAX_TRACKED_PLAYERS = 3
         self.bot.loop.create_task(self.schedule_daily_summary())
 
     async def setup_tracking_for_all_players(self):
@@ -39,8 +43,9 @@ class PlayerCommands(commands.Cog):
                             continue
 
                     if channel:
-                        if tag not in self.tracking_tasks:
-                            self.tracking_tasks[tag] = self.bot.loop.create_task(
+                        task_key = (tag, channel_id)
+                        if task_key not in self.tracking_tasks:
+                            self.tracking_tasks[task_key] = self.bot.loop.create_task(
                                 self.track_trophies(tag, channel_id)
                             )
                             print(f"Resumed tracking for player {tag} in channel {channel.name} ({channel_id})")
@@ -90,30 +95,50 @@ class PlayerCommands(commands.Cog):
         except Exception as e:
             await inter.edit_original_message(content=f"Error linking account: {str(e)}")
 
-
     @player.sub_command()
-    async def stop_tracking(self, inter: disnake.ApplicationCommandInteraction):
-        """Stop tracking player"""
+    async def untrack(self, inter: disnake.ApplicationCommandInteraction, tag: str = None):
+        """Stop tracking player's trophies"""
         await inter.response.defer()
 
         try:
-            tag = await get_player_by_discord_id(inter.author.id)
             if not tag:
-                await inter.edit_original_message(content="You haven't linked any account!")
+                tag = await get_player_by_discord_id(inter.author.id)
+                if not tag:
+                    await inter.edit_original_message(content="Please provide a player tag or link your account first!")
+                    return
+            else:
+                tag = tag.replace('#', '')
+
+            # Check if player exists
+            player = await get_player_info(tag)
+            if not player:
+                await inter.edit_original_message(content="Invalid player tag!")
                 return
 
-            if tag in self.tracking_tasks:
-                self.tracking_tasks[tag].cancel()
-                del self.tracking_tasks[tag]
+            # Get this user's tracking info for the player
+            tracked_players = await get_tracked_players_by_discord_id(inter.author.id)
+            tracking_info = next((p for p in tracked_players if p["player_tag"] == tag), None)
 
-            channel_info = await get_tracking_channel(tag)
-            if channel_info:
-                channel = self.bot.get_channel(channel_info["channel_id"])
-                if channel:
-                    await channel.delete()
+            if not tracking_info:
+                await inter.edit_original_message(content="You are not tracking this player!")
+                return
 
-            await remove_tracking_channel(tag)
-            await inter.edit_original_message(content="✅ Stopped tracking player!")
+            channel_id = tracking_info["channel_id"]
+            task_key = (tag, channel_id)
+
+            # Cancel this specific tracking task
+            if task_key in self.tracking_tasks:
+                self.tracking_tasks[task_key].cancel()
+                del self.tracking_tasks[task_key]
+
+            # Delete the channel
+            channel = self.bot.get_channel(channel_id)
+            if channel:
+                await channel.delete()
+
+            # Remove this specific tracking entry
+            await remove_tracking_channel(tag, inter.author.id)
+            await inter.edit_original_message(content=f"✅ Stopped tracking {player.name}!")
         except Exception as e:
             await inter.edit_original_message(content=f"Error stopping tracker: {str(e)}")
 
@@ -166,7 +191,6 @@ class PlayerCommands(commands.Cog):
         except Exception as e:
             await inter.edit_original_message(content=f"Error checking player: {str(e)}")
 
-
     @player.sub_command()
     async def track(self, inter: disnake.ApplicationCommandInteraction, tag: str = None):
         """Track player trophy changes in Legend League
@@ -187,14 +211,38 @@ class PlayerCommands(commands.Cog):
             else:
                 tag = tag.replace('#', '')
 
-            # Check if already tracking this player
-            existing_channel = await get_tracking_channel(tag)
-            if existing_channel:
-                channel = self.bot.get_channel(existing_channel["channel_id"])
-                if channel:
-                    await inter.edit_original_message(
-                        content=f"Already tracking this player in {channel.mention}!"
-                    )
+            # Check if user has reached the tracking limit
+            tracked_count = await get_tracked_player_count(inter.author.id)
+            if tracked_count >= self.MAX_TRACKED_PLAYERS:
+                tracked_players = await get_tracked_players_by_discord_id(inter.author.id)
+                formatted_players = []
+                for player_info in tracked_players:
+                    try:
+                        player = await get_player_info(player_info['player_tag'])
+                        formatted_players.append(f"• #{player_info['player_tag'].upper()} ({player.name})")
+                    except:
+                        # Fallback if player info can't be fetched
+                        formatted_players.append(f"• #{player_info['player_tag'].upper()}")
+
+                tags_list = "\n".join(formatted_players)
+                await inter.edit_original_message(
+                    content=f"❌ You can only track up to {self.MAX_TRACKED_PLAYERS} players at a time!\n\nCurrently tracking:\n{tags_list}"
+                )
+                return
+
+            # Check if this user is already tracking this player
+            tracked_players = await get_tracked_players_by_discord_id(inter.author.id)
+            for tracked in tracked_players:
+                if tracked["player_tag"] == tag:
+                    channel = self.bot.get_channel(tracked["channel_id"])
+                    if channel:
+                        await inter.edit_original_message(
+                            content=f"You are already tracking this player in {channel.mention}!"
+                        )
+                    else:
+                        await inter.edit_original_message(
+                            content=f"You are already tracking this player!"
+                        )
                     return
 
             player = await get_player_info(tag)
@@ -206,17 +254,38 @@ class PlayerCommands(commands.Cog):
                 )
                 return
 
-            # Create tracking channel
+            # Create tracking channel with proper permissions
             channel_name = f"{player.name}-trophy-tracker".lower().replace(' ', '-')
-            tracking_channel = await inter.guild.create_text_channel(channel_name)
+
+            # Set up permission overwrites
+            overwrites = {
+                inter.guild.default_role: disnake.PermissionOverwrite(read_messages=False),
+                inter.guild.me: disnake.PermissionOverwrite(
+                    read_messages=True,
+                    send_messages=True,
+                    manage_channels=True,
+                    manage_messages=True
+                ),
+                inter.author: disnake.PermissionOverwrite(
+                    read_messages=True,
+                    send_messages=False  # User can read but not write in the channel
+                )
+            }
+
+            tracking_channel = await inter.guild.create_text_channel(
+                name=channel_name,
+                overwrites=overwrites,
+                reason=f"Trophy tracking channel for {player.name}"
+            )
 
             # Save channel info to database
             await save_tracking_channel(inter.author.id, tag, tracking_channel.id)
 
-            # Start tracking task
-            if tag in self.tracking_tasks:
-                self.tracking_tasks[tag].cancel()
-            self.tracking_tasks[tag] = self.bot.loop.create_task(
+            # Start tracking task with unique key for this channel
+            task_key = (tag, tracking_channel.id)
+            if task_key in self.tracking_tasks:
+                self.tracking_tasks[task_key].cancel()
+            self.tracking_tasks[task_key] = self.bot.loop.create_task(
                 self.track_trophies(tag, tracking_channel.id)
             )
 
@@ -225,6 +294,7 @@ class PlayerCommands(commands.Cog):
             )
         except Exception as e:
             await inter.edit_original_message(content=f"Error setting up tracking: {str(e)}")
+
 
     async def track_trophies(self, tag: str, channel_id: int):
         """Background task to track trophy changes"""
@@ -430,17 +500,36 @@ class PlayerCommands(commands.Cog):
                 print(f"Error in schedule_daily_summary: {e}")
                 await asyncio.sleep(60)
 
-
     @player.sub_command()
-    async def force_summary(self, inter: disnake.ApplicationCommandInteraction):
-        """Force a daily trophy summary (Testing command)"""
+    async def force_summary(self, inter: disnake.ApplicationCommandInteraction, tag: str = None):
+        """Force a daily trophy summary for a specific player
+
+        Parameters
+        ----------
+        tag: Player tag to summarize (optional for all tracked players)
+        """
         await inter.response.defer()
 
         try:
-            await self.run_daily_summary()
-            await inter.edit_original_message(content="✅ Daily summary has been forced!")
+            if tag:
+                # Handle single player summary
+                tag = tag.replace('#', '')
+                channel_info = await get_tracking_channel(tag)
+                if not channel_info:
+                    await inter.edit_original_message(content="This player is not being tracked!")
+                    return
+
+                # Run summary for just this player
+                await self.run_daily_summary(specific_tag=tag)
+                player = await get_player_info(tag)
+                await inter.edit_original_message(content=f"✅ Generated summary for {player.name}!")
+            else:
+                # Handle all players summary
+                await self.run_daily_summary()
+                await inter.edit_original_message(content="✅ Daily summary has been generated for all tracked players!")
         except Exception as e:
             await inter.edit_original_message(content=f"❌ Error running summary: {str(e)}")
+
 
     async def run_daily_summary(self):
         """Run daily trophy summary for all tracked players"""
@@ -523,6 +612,47 @@ class PlayerCommands(commands.Cog):
                 if 'player' in locals():
                     print(f"Player info: {player.__dict__}")
 
+    @player.sub_command()
+    async def list_tracked(self, inter: disnake.ApplicationCommandInteraction):
+        """List all players you are currently tracking"""
+        await inter.response.defer()
+
+        try:
+            tracked_players = await get_tracked_players_by_discord_id(inter.author.id)
+
+            if not tracked_players:
+                await inter.edit_original_message(content="You are not tracking any players!")
+                return
+
+            embed = disnake.Embed(
+                title="Your Tracked Players",
+                description=f"You are tracking {len(tracked_players)}/{self.MAX_TRACKED_PLAYERS} players",
+                color=disnake.Color.blue()
+            )
+
+            for player_info in tracked_players:
+                try:
+                    player = await get_player_info(player_info["player_tag"])
+                    channel = self.bot.get_channel(player_info["channel_id"])
+
+                    value = f"Channel: {channel.mention if channel else 'Channel not found'}\n"
+                    value += f"Current Trophies: 🏆 {player.trophies}\n"
+                    if player.clan:
+                        value += f"Clan: {player.clan.name}"
+
+                    embed.add_field(
+                        name=f"{player.name} ({player.tag})",
+                        value=value,
+                        inline=False
+                    )
+                except Exception as e:
+                    print(f"Error getting player info for {player_info['player_tag']}: {e}")
+                    continue
+
+            await inter.edit_original_message(embed=embed)
+        except Exception as e:
+            await inter.edit_original_message(content=f"Error listing tracked players: {str(e)}")
+            
 
 def setup(bot):
     bot.add_cog(PlayerCommands(bot))
