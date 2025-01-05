@@ -1,7 +1,6 @@
 import asyncio
-
-import disnake
-from disnake.ext import commands
+import discord
+from discord.ext import commands
 import sys
 import signal
 
@@ -12,18 +11,21 @@ from database.mongo_utils import close_database
 
 class ClashBot(commands.Bot):
     def __init__(self):
-        intents = disnake.Intents.default()
+        intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
         intents.guild_messages = True
 
         super().__init__(
             command_prefix="!",
-            intents=intents,
-            command_sync_flags=commands.CommandSyncFlags.default()
+            intents=intents
         )
 
-    @commands.Cog.listener()
+    async def setup_hook(self):
+        """Called when the bot is setting up"""
+        # Load cogs here instead of in main()
+        await self.load_extension("cogs.player.commands")
+
     async def on_ready(self):
         print(f'Logged in as {self.user} (ID: {self.user.id})')
         print('------')
@@ -62,15 +64,13 @@ async def main():
     bot = ClashBot()
 
     try:
-        # Load cogs
-        bot.load_extension("cogs.player.commands")
-
         await bot.start(DISCORD_TOKEN)
     except KeyboardInterrupt:
         print("Received keyboard interrupt, shutting down...")
         await bot.close()
     finally:
         await bot.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
