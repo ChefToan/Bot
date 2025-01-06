@@ -1,0 +1,72 @@
+server:
+  port: 2333
+  address: 0.0.0.0  # Changed from 127.0.0.1 to allow external connections
+
+lavalink:
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.11.3"
+      snapshot: false
+    - dependency: "com.github.topi314.sponsorblock:sponsorblock-plugin:3.0.1"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    - dependency: "com.github.topi314.lavasearch:lavasearch-plugin:1.0.0"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.3.0"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+  server:
+    password: "youshallnotpass"
+    sources:
+      youtube: false
+      bandcamp: true
+      soundcloud: true
+      twitch: true
+      vimeo: true
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
+    youtubeSearchEnabled: true
+    soundcloudSearchEnabled: true
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    clients:
+      - WEB
+      - WEBEMBEDDED
+      - ANDROID_MUSIC
+      - ANDROID_VR
+      - TVHTML5EMBEDDED
+#    pot:
+#      token: ${YOUTUBE_POT_TOKEN}
+#      visitorData: ${YOUTUBE_VISITOR_DATA}
+#    lavasrc:
+#      providers: # Custom providers for track loading. This is the default
+#        #      - "dzisrc:%ISRC%" # Deezer ISRC provider
+#        #      - "dzsearch:%QUERY%" # Deezer search provider
+#        - "ytsearch:\"%ISRC%\"" # Will be ignored if track does not have an ISRC. See https://en.wikipedia.org/wiki/International_Standard_Recording_Code
+#        - "ytsearch:%QUERY%" # Will be used if track has no ISRC or no track could be found for the ISRC
+#      #        you can add multiple other fallback sources here
+#      sources:
+#        spotify: false # Enable Spotify source
+#        applemusic: false # Enable Apple Music source
+#      lyrics-sources:
+#        spotify: false # Enable Spotify lyrics source
+#      spotify:
+#        clientId: ""
+#        clientSecret: ""
+#        spDc: "" # the sp dc cookie used for accessing the spotify lyrics api
+#        countryCode: "US" # the country code you want to use for filtering the artists top tracks. See https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
+#        playlistLoadLimit: 6 # The number of pages at 100 tracks each
+#        albumLoadLimit: 6 # The number of pages at 50 tracks each
+#        localFiles: false #  Enable local files support with Spotify playlists. Please note `uri` & `isrc` will be `null` & `identifier` will be `"local"`
+#      applemusic:
+#        countryCode: "US" # the country code you want to use for filtering the artists top tracks and language. See https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
+#        mediaAPIToken: "" # apple music api token
+#        playlistLoadLimit: 6 # The number of pages at 300 tracks each
+#        albumLoadLimit: 6 # The number of pages at 300 tracks each

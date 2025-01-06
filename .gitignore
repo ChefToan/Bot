@@ -40,3 +40,8 @@ htmlcov/
 .coverage.*
 coverage.xml
 *.cover
+
+*.jar
+!gradle-wrapper.jar  # Exception for Gradle wrapper if you use Gradle
+
+*.bat

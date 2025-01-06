@@ -1,0 +1,41 @@
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: lavalink
+    restart: unless-stopped
+    environment:
+      - _JAVA_OPTIONS=-Xmx6G
+      - SERVER_PORT=2333
+      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+      # Add environment variables for YouTube token
+      - YOUTUBE_POT_TOKEN=${YOUTUBE_POT_TOKEN}
+      - YOUTUBE_VISITOR_DATA=${YOUTUBE_VISITOR_DATA}
+    volumes:
+      - ./application.yml:/opt/Lavalink/application.yml
+      - ./plugins/:/opt/Lavalink/plugins/
+    networks:
+      - lavalink
+    ports:
+      - "2333:2333"
+    # Make Lavalink wait for token generator to be ready
+    depends_on:
+      - youtube-token-generator
+
+  youtube-token-generator:
+    image: quay.io/invidious/youtube-trusted-session-generator:webserver
+    container_name: youtube-token-generator
+    restart: unless-stopped
+    networks:
+      - lavalink
+    ports:
+      - "8080:8080"
+    # Add healthcheck to ensure the service is ready
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/token"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  lavalink:
+    name: lavalink
