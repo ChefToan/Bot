@@ -42,9 +42,9 @@ plugins:
       - ANDROID_MUSIC
       - ANDROID_VR
       - TVHTML5EMBEDDED
-#    pot:
-#      token: ${YOUTUBE_POT_TOKEN}
-#      visitorData: ${YOUTUBE_VISITOR_DATA}
+    pot:
+      token: ${YOUTUBE_POT_TOKEN}
+      visitorData: ${YOUTUBE_VISITOR_DATA}
 #    lavasrc:
 #      providers: # Custom providers for track loading. This is the default
 #        #      - "dzisrc:%ISRC%" # Deezer ISRC provider
